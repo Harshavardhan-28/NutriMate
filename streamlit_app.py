@@ -1,53 +1,78 @@
 import streamlit as st
-from openai import OpenAI
+from snowflake.snowpark import Session
 
-# Show title and description.
-st.title("📄 Document question answering")
-st.write(
-    "Upload a document below and ask a question about it – GPT will answer! "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-)
+# Initialize Snowflake session
+def init_session():
+    connection_params = {
+        "account": "*",
+        "user": "*",
+        "password": "*",  # Replace with a secure method to retrieve the password
+        "role": "ACCOUNTADMIN",
+        "database": "CC_QUICKSTART_CORTEX_SEARCH_DOCS",
+        "schema": "DATA",
+        "warehouse": "COMPUTE_WH",
+    }
+    try:
+        session = Session.builder.configs(connection_params).create()
+        st.success("Connected to Snowflake!")
+        return session
+    except Exception as e:
+        st.error(f"Failed to connect to Snowflake: {e}")
+        return None
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+def upload_to_snowflake(session, file, stage_name="DOCS", path="documents/"):
+    """
+    Uploads a file to a Snowflake stage.
+    """
+    try:
+        # File details
+        file_name = file.name
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+        # Use PUT command for uploading (file itself is a BytesIO object)
+        session.file.put_stream(file, f"@{stage_name}/{path}{file_name}")
+        st.success(f"Uploaded {file_name} to Snowflake stage '{stage_name}/{path}'")
+        return f"{path}{file_name}"
+    except Exception as e:
+        st.error(f"Error uploading file: {e}")
+        return None
 
-    # Let the user upload a file via `st.file_uploader`.
-    uploaded_file = st.file_uploader(
-        "Upload a document (.txt or .md)", type=("txt", "md")
-    )
 
-    # Ask the user for a question via `st.text_area`.
-    question = st.text_area(
-        "Now ask a question about the document!",
-        placeholder="Can you give me a short summary?",
-        disabled=not uploaded_file,
-    )
+def process_document(session, file_path, table_name="DOCS_CHUNKS_TABLE"):
+    """
+    Processes the uploaded document, splits it into chunks, and stores the chunks in a Snowflake table.
+    """
+    try:
+        # Processing query
+        process_query = f"""
+        COPY INTO {table_name}
+        FROM @DOCS/documents/{file_path}
+        FILE_FORMAT = (TYPE = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"')
+        ON_ERROR = CONTINUE;
+        """
+        session.sql(process_query).collect()
+        st.success(f"Document processed and stored in table: {table_name}")
+    except Exception as e:
+        st.error(f"Error processing document: {e}")
 
-    if uploaded_file and question:
+def main():
+    st.title("Document Upload and Processing in Snowflake")
 
-        # Process the uploaded file and question.
-        document = uploaded_file.read().decode()
-        messages = [
-            {
-                "role": "user",
-                "content": f"Here's a document: {document} \n\n---\n\n {question}",
-            }
-        ]
+    session = init_session()
+    if session:
+        # File upload widget
+        uploaded_file = st.file_uploader("Upload your document", type=["txt", "csv", "json", "pdf"])
 
-        # Generate an answer using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            stream=True,
-        )
+        if uploaded_file:
+            # Snowflake stage and table details
+            stage_name = "DOCS"
+            table_name = "DOCS_CHUNKS_TABLE"
 
-        # Stream the response to the app using `st.write_stream`.
-        st.write_stream(stream)
+            # Upload file to Snowflake stage
+            file_path = upload_to_snowflake(session, uploaded_file, stage_name)
+
+            if file_path:
+                # Automatically process document
+                process_document(session, file_path, table_name)
+
+if __name__ == "__main__":
+    main()
