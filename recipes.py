@@ -1,4 +1,5 @@
 import streamlit as st
+from snowflake.snowpark import Session
 from snowflake.snowpark.context import get_active_session
 from snowflake.core import Root
 import pandas as pd
@@ -85,7 +86,32 @@ COLUMNS = [
     "URL"
 ]
 
-session = get_active_session()
+
+def init_session():
+
+    """
+    Initializes and returns a Snowflake session using the Snowpark library.
+    """
+    connection_params = {
+        "account": "ULUGCKT-SCB80390",  # Replace with your Snowflake account identifier
+        "user": "aanchal",  # Replace with your Snowflake username
+        "password": "E@rlgreyte@1234",  # Replace with a secure method to retrieve the password
+        "role": "ACCOUNTADMIN",
+        "database": "NUTRITION",
+        "schema": "DATA",
+        "warehouse": "COMPUTE_WH",
+    }
+    try:
+        # Create a Snowflake session
+        session = Session.builder.configs(connection_params).create()
+        st.success("Connected to Snowflake!")
+        return session
+    except Exception as e:
+        st.error(f"Failed to connect to Snowflake: {e}")
+        return None
+    
+
+session = init_session()
 root = Root(session)
 
 svc = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].cortex_search_services[CORTEX_SEARCH_SERVICE]
@@ -368,43 +394,43 @@ def main():
                 res_text = response[0].RESPONSE
                 message_placeholder.markdown(res_text)
 
-                # Process PDF download data
-                download_response_as_pdf(res_text)
-
-      
         st.session_state.messages.append({"role": "assistant", "content": res_text})
+        st.session_state.latest_response = res_text
 
-    
-    
-    
-   
+    # Display buttons to generate and automatically download PDF, CSV, and shopping list
     if "json_data" in st.session_state and st.session_state.json_data:
-        download_csv(st.session_state.json_data)
-        generate_shopping_list(st.session_state.json_data)
-        st.download_button(
-            label="Download Shopping List as PDF",
-            data=st.session_state.shopping_list_pdf_data,
-            file_name="shopping_list.pdf",
-            mime="application/pdf"
-        )
-        st.download_button(
-            label="Download Meal Plan as CSV",
-            data=st.session_state.csv_data,
-            file_name="mealplan.csv",
-            mime="text/csv"
-        )
-   
-    # Display download buttons only if the corresponding data exists in session state       
-        
-   
-    
-    if st.session_state.get("pdf_data") is not None:
-        st.download_button(
-            label="Download Full Response as PDF",
-            data=st.session_state.pdf_data,
-            file_name="recipes.pdf",
-            mime="application/pdf"
-        )
+        if st.button("Generate and Download Shopping List as PDF"):
+            generate_shopping_list(st.session_state.json_data)
+            st.download_button(
+                label="Download Shopping List as PDF",
+                data=st.session_state.shopping_list_pdf_data,
+                file_name="shopping_list.pdf",
+                mime="application/pdf",
+                on_click=None
+            )
+
+        if st.button("Generate and Download Meal Plan as CSV"):
+            download_csv(st.session_state.json_data)
+            st.download_button(
+                label="Download Meal Plan as CSV",
+                data=st.session_state.csv_data,
+                file_name="mealplan.csv",
+                mime="text/csv",
+                on_click=None
+            )
+
+    if st.session_state.get("latest_response") is not None:
+        if st.button("Generate and Download Full Response as PDF"):
+            download_response_as_pdf(st.session_state.latest_response)
+            st.download_button(
+                label="Download Full Response as PDF",
+                data=st.session_state.pdf_data,
+                file_name="recipes.pdf",
+                mime="application/pdf",
+                on_click=None
+            )
+
+
 
 
 

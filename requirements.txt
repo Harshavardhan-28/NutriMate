@@ -1,2 +1,6 @@
 streamlit
-openai
+snowflake-snowpark-python
+fpdf
+pandas
+markdown2
+bs4

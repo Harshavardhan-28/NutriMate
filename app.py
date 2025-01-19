@@ -1,96 +1,12 @@
-
-# import streamlit as st
-
-# def upload_to_snowflake(session, file, stage_name="DOCS"):
-#     """
-#     Uploads a file directly to a Snowflake stage.
-#     Args:
-#         session: Snowflake session object.
-#         file: Uploaded file object from Streamlit file uploader.
-#         stage_name: Name of the Snowflake stage.
-#     Returns:
-#         The relative path of the uploaded file in the stage.
-#     """
-#     try:
-#         # File details
-#         file_name = file.name
-
-#         # Use PUT command for uploading (file is a BytesIO object)
-#         session.file.put_stream(file, f"@{stage_name}/{file_name}")
-#         st.success(f"Uploaded {file_name} to Snowflake stage '{stage_name}'")
-#         return file_name  # Relative path is the file name since there’s no subdirectory
-#     except Exception as e:
-#         st.error(f"Error uploading file: {e}")
-#         return None
-
-
-# def process_document(session, file_path, table_name="DOCS_CHUNKS_TABLE"):
-#     """
-#     Processes the uploaded document, splits it into chunks, and stores the chunks in a Snowflake table.
-#     Args:
-#         session: Snowflake session object.
-#         file_path: Path of the document to process (relative to the stage).
-#         table_name: Name of the Snowflake table to insert chunks into.
-#     """
-#     try:
-#         # Build the query to process and insert document chunks
-#         process_query = f"""
-#         INSERT INTO {table_name} (relative_path, size, file_url, scoped_file_url, chunk)
-#         SELECT
-#             relative_path,
-#             size,
-#             file_url,
-#             build_scoped_file_url(@DOCS, relative_path) AS scoped_file_url,
-#             func.chunk AS chunk
-#         FROM
-#             DIRECTORY(@DOCS),
-#             TABLE(text_chunker(TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@DOCS, 
-#                 relative_path, {{'mode': 'LAYOUT'}})))) AS func
-#         WHERE relative_path = '{file_path}';
-#         """
-        
-#         # Execute the query
-#         session.sql(process_query).collect()
-#         st.success(f"Document processed and stored in table: {table_name}")
-#     except Exception as e:
-#         st.error(f"Error processing document: {e}")
-
-
-
-
-# def main():
-#     """
-#     Streamlit app main function for document upload and processing.
-#     """
-#     st.title("Document Upload and Processing in Snowflake")
-
-#     # Initialize Snowflake session
-#     session = init_session()
-#     if session:
-#         # File upload widget
-#         uploaded_file = st.file_uploader("Upload your document", type=["txt", "csv", "json", "pdf"])
-
-#         if uploaded_file:
-#             # Snowflake stage and table details
-#             stage_name = "DOCS"
-#             table_name = "DOCS_CHUNKS_TABLE"
-
-#             # Upload file to Snowflake stage
-#             file_path = upload_to_snowflake(session, uploaded_file, stage_name)
-
-#             if file_path:
-#                 # Automatically process document
-#                 process_document(session, file_path, table_name)
-
-
-# if __name__ == "__main__":
-#     main()
-from snowflake.snowpark import Session
 import streamlit as st
+from snowflake.snowpark import Session
 from snowflake.snowpark.context import get_active_session
 from snowflake.core import Root
 import pandas as pd
 import json
+from fpdf import FPDF
+from markdown2 import markdown
+from bs4 import BeautifulSoup  # To handle HTML parsing
 
 pd.set_option("max_colwidth", None)
 
@@ -103,7 +19,6 @@ CORTEX_SEARCH_DATABASE = "NUTRITION"
 CORTEX_SEARCH_SCHEMA = "DATA"
 RECIPE_SEARCH_SERVICE = "FOOD_SEARCH"
 INGREDIENT_SEARCH_SERVICE = "NUTRITION_SEARCH"
-INGREDIENT_BY_NAME_SEARCH_SERVICE = "harsh"
 
 # Updated Default Values
 TABLE2_COLUMNS = [
@@ -139,7 +54,7 @@ def init_session():
     try:
         # Create a Snowflake session
         session = Session.builder.configs(connection_params).create()
-        st.success("Connected to Snowflake!")
+        # st.success("Connected to Snowflake!")
         return session
     except Exception as e:
         st.error(f"Failed to connect to Snowflake: {e}")
@@ -149,7 +64,6 @@ session = init_session()
 root = Root(session)
 
 svcR = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].cortex_search_services[RECIPE_SEARCH_SERVICE]
-svcI_N = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].cortex_search_services[INGREDIENT_BY_NAME_SEARCH_SERVICE]
 svcI = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].cortex_search_services[INGREDIENT_SEARCH_SERVICE]
 
 ### Functions
@@ -160,16 +74,16 @@ def config_options():
         'mistral-large',
         'mistral-7b'), key="model_name")
 
-    cuisines = session.sql("SELECT DISTINCT CUISINE FROM DATA.RECIPES").collect()
-    diets = session.sql("SELECT DISTINCT DIET FROM DATA.RECIPES").collect()
+    # cuisines = session.sql("SELECT DISTINCT CUISINE FROM DATA.RECIPES").collect()
+    # diets = session.sql("SELECT DISTINCT DIET FROM DATA.RECIPES").collect()
 
-    cuisine_list = ['ALL'] + [cuisine.CUISINE for cuisine in cuisines]
-    diet_list = ['ALL'] + [diet.DIET for diet in diets]
+    # cuisine_list = ['ALL'] + [cuisine.CUISINE for cuisine in cuisines]
+    # diet_list = ['ALL'] + [diet.DIET for diet in diets]
 
-    st.sidebar.selectbox('Select cuisine:', cuisine_list, key="cuisine_value")
-    st.sidebar.selectbox('Select diet:', diet_list, key="diet_value")
+    # st.sidebar.selectbox('Select cuisine:', cuisine_list, key="cuisine_value")
+    # st.sidebar.selectbox('Select diet:', diet_list, key="diet_value")
     st.sidebar.checkbox('Do you want me to remember the chat history?', key="use_chat_history", value=True)
-    st.sidebar.checkbox('Debug: Click to see summary of previous conversations', key="debug", value=True)
+    # st.sidebar.checkbox('Debug: Click to see summary of previous conversations', key="debug", value=True)
     st.sidebar.button("Start Over", key="clear_conversation", on_click=init_messages)
     st.sidebar.expander("Session State").write(st.session_state)
 
@@ -189,13 +103,8 @@ def classify_prompt(query):
         }},
         {{
           'label': 'ingredients',
-          'description': 'Queries related to category of food based on their nutritional facts or their properties',
-          'examples': ['What is a high protein source?', 'Suggest some food with low calories?', 'If I am diabetic what foods should I avoid?']
-        }},
-        {{
-          'label': 'ingredients_by_name',
-          'description': 'Queries related to specific food items, specified by name',
-          'examples': ['Tell me the nutritional facts of mangoes?', 'What are the nutritional facts of oranges per 100g?','Tell me about bananas.']
+          'description': 'Queries related to specific food items, their properties, or usage in cooking',
+          'examples': ['What is a high protein source?', 'What are the nutritionaal facts of oranges per 100g?', 'If I am diabetic what foods should I avoid?']
         }}
       ],
       {{'task_description': 'Classify the query as either recipe or ingredients based on the intent of the user'}}
@@ -222,23 +131,10 @@ def get_similar_chunks_search_service(query, classification):
     elif classification == "ingredients":
         service = svcI
         query_columns = TABLE2_COLUMNS
-    elif classification == "ingredients_by_name":
-        service = svcI_N
-        query_columns = TABLE2_COLUMNS
     else:
         return {}
 
-    filter_conditions = []
-    if st.session_state.cuisine_value != "ALL":
-        filter_conditions.append({"@eq": {"CUISINE": st.session_state.cuisine_value}})
-    if st.session_state.diet_value != "ALL":
-        filter_conditions.append({"@eq": {"DIET": st.session_state.diet_value}})
-
-    if filter_conditions:
-        filter_obj = {"@and": filter_conditions}
-        response = service.search(query, query_columns, filter=filter_obj, limit=NUM_CHUNKS)
-    else:
-        response = service.search(query, query_columns, limit=NUM_CHUNKS)
+    response = service.search(query, query_columns, filter=filter_obj, limit=NUM_CHUNKS)
 
     st.sidebar.json(response.json())
     return response.json()
@@ -340,6 +236,108 @@ def complete(myquestion):
     df_response = session.sql(cmd, params=[st.session_state.model_name, prompt]).collect()
     return df_response, recipes
 
+
+def download_csv(json_data):
+    # Create a list of dictionaries for each recipe
+    recipe_data = [
+        {
+            'Recipe Name': item['TRANSLATEDRECIPENAME'],
+            'Ingredients':item['TRANSLATEDINGREDIENTS'],
+            'Instructions': item['TRANSLATEDINSTRUCTIONS'],
+            'URL': item.get('URL', 'N/A'),
+            'Prep Time (mins)': item['PREPTIMEINMINS'],
+            'Cook Time (mins)': item['COOKTIMEINMINS'],
+            'Total Time (mins)': item['TOTALTIMEINMINS'],
+            'Cuisine': item['CUISINE'],
+            'Servings': item['SERVINGS'],
+            'Diet': item['DIET']
+        }
+        for item in json_data['results']
+    ]
+
+    # Convert the list of dictionaries to a DataFrame
+    df = pd.DataFrame(recipe_data)
+
+    # Generate the CSV output
+    csv_output = df.to_csv(index=False)
+
+    # Save the CSV data to session_state
+    st.session_state.csv_data = csv_output
+
+
+def download_response_as_pdf(response_text):
+    """
+    Generates and serves the full response as a downloadable PDF file using a simplified approach.
+    """
+    try:
+        # Initialize the PDF object
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+
+        # Add the response text to the PDF
+        pdf.multi_cell(0, 10, txt=response_text)  # Handles multi-line text
+
+        # Generate the PDF as a byte string
+        pdf_data = pdf.output(dest='S').encode('latin1')
+
+        # Save the PDF data to session_state
+        st.session_state.pdf_data = pdf_data
+
+    except Exception as e:
+        st.error(f"An error occurred while generating the PDF: {e}")
+
+def generate_shopping_list(json_data):
+    """
+    Generates a shopping list from JSON data, refines it using Snowflake Cortex, 
+    and ensures Markdown content is properly formatted for the PDF.
+    """
+    try:
+        # Combine ingredients from all recipes into a single text block
+        combined_ingredients = []
+        for item in json_data.get('results', []):
+            ingredients = item.get('TRANSLATEDINGREDIENTS', "").split(", ")
+            combined_ingredients.extend(ingredients)
+
+        # Create a single text input for the Cortex model
+        ingredients_text = "\n".join(combined_ingredients)
+        prompt = f"""
+            You are a smart assistant. Create a comprehensive shopping list in Markdown format 
+            (use headers, bullet points, and **bold** where appropriate) based on the following ingredients:
+            {ingredients_text}
+        """
+
+        # Use Snowflake Cortex to complete the prompt
+        cmd = """
+                SELECT snowflake.cortex.complete(?, ?) AS response
+              """
+        df_response = session.sql(cmd, params=[st.session_state.model_name, prompt]).collect()
+        shopping_list_markdown = df_response[0].RESPONSE.strip()
+
+        # Convert Markdown to HTML
+        html_text = markdown(shopping_list_markdown)
+
+        # Parse HTML into plain text using BeautifulSoup
+        soup = BeautifulSoup(html_text, 'html.parser')
+        plain_text = soup.get_text()
+
+        # Initialize the PDF object
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+
+        # Add the plain text to the PDF
+        pdf.multi_cell(0, 10, plain_text)
+
+        # Convert PDF to binary data
+        pdf_data = pdf.output(dest="S").encode("latin1")
+        st.session_state.shopping_list_pdf_data = pdf_data
+
+        st.success("Shopping list generated successfully!")
+
+    except Exception as e:
+        st.error(f"An error occurred while generating the shopping list: {e}")                                                       
+
 def main():
     st.title(":speech_balloon: Chat Assistant with Snowflake Cortex")
     st.write("Explore Indian food recipes and cuisines using structured data:")
@@ -347,37 +345,6 @@ def main():
     config_options()
     init_messages()
     
-    # for message in st.session_state.get("messages", []):
-    #     with st.chat_message(message["role"]):
-    #         st.markdown(message["content"])
-
-    # question = st.chat_input("Enter your question about recipes and cuisines")
-
-    # if question:
-    #     st.session_state.messages.append({"role": "user", "content": question})
-
-    #     with st.chat_message("user"):
-    #         st.markdown(question)
-
-    #     with st.chat_message("assistant"):
-    #         message_placeholder = st.empty()
-
-    #         question = question.replace("'", "")
-
-    #         with st.spinner(f"Classifying query..."):
-    #             classification = classify_prompt(question)
-
-    #         if not classification:
-    #             res_text = "I'm not sure how to classify your question. Please rephrase it."
-    #             message_placeholder.markdown(res_text)
-    #         else:
-    #             with st.spinner(f"Using {classification} search service..."):
-    #                 response = get_similar_chunks_search_service(question, classification)
-
-    #             res_text = "Here are the results:" if response else "No relevant results found."
-    #             message_placeholder.markdown(res_text)
-
-    #     st.session_state.messages.append({"role": "assistant", "content": res_text})
 
 
     for message in st.session_state.get("messages", []):
@@ -412,3 +379,34 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # for message in st.session_state.get("messages", []):
+    #     with st.chat_message(message["role"]):
+    #         st.markdown(message["content"])
+
+    # question = st.chat_input("Enter your question about recipes and cuisines")
+
+    # if question:
+    #     st.session_state.messages.append({"role": "user", "content": question})
+
+    #     with st.chat_message("user"):
+    #         st.markdown(question)
+
+    #     with st.chat_message("assistant"):
+    #         message_placeholder = st.empty()
+
+    #         question = question.replace("'", "")
+
+    #         with st.spinner(f"Classifying query..."):
+    #             classification = classify_prompt(question)
+
+    #         if not classification:
+    #             res_text = "I'm not sure how to classify your question. Please rephrase it."
+    #             message_placeholder.markdown(res_text)
+    #         else:
+    #             with st.spinner(f"Using {classification} search service..."):
+    #                 response = get_similar_chunks_search_service(question, classification)
+
+    #             res_text = "Here are the results:" if response else "No relevant results found."
+    #             message_placeholder.markdown(res_text)
+
+    #     st.session_state.messages.append({"role": "assistant", "content": res_text})
