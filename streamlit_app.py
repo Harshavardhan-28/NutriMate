@@ -103,7 +103,7 @@ CORTEX_SEARCH_DATABASE = "NUTRITION"
 CORTEX_SEARCH_SCHEMA = "DATA"
 RECIPE_SEARCH_SERVICE = "FOOD_SEARCH"
 INGREDIENT_SEARCH_SERVICE = "NUTRITION_SEARCH"
-INGREDIENT_BY_NAME_SEARCH_SERVICE = "harsh"
+INGREDIENT_BY_NAME_SEARCH_SERVICE = "HARSH"
 
 # Updated Default Values
 TABLE2_COLUMNS = [
@@ -189,30 +189,71 @@ def classify_prompt(query):
         }},
         {{
           'label': 'ingredients',
-          'description': 'Queries related to category of food based on their nutritional facts or their properties',
-          'examples': ['What is a high protein source?', 'Suggest some food with low calories?', 'If I am diabetic what foods should I avoid?']
+          'description': 'Queries related to categories of food based on their nutritional facts or general properties',
+          'examples': ['What are some high-protein foods?', 'Suggest some low-calorie food categories', 'What should diabetics avoid eating?']
         }},
         {{
           'label': 'ingredients_by_name',
-          'description': 'Queries related to specific food items, specified by name',
-          'examples': ['Tell me the nutritional facts of mangoes?', 'What are the nutritional facts of oranges per 100g?','Tell me about bananas.']
+          'description': 'Queries specifically mentioning a named ingredient to get its properties or nutritional facts',
+          'examples': ['What are the nutritional facts of mangoes?', 'Tell me about oranges', 'Explain the benefits of bananas.']
         }}
       ],
-      {{'task_description': 'Classify the query as either recipe or ingredients based on the intent of the user'}}
+      {{'task_description': 'Classify the query as recipe, ingredients, or ingredients_by_name based on whether the user asks about preparing a dish, general food properties, or specific ingredient details.'}}
     );
     """
 
     # Execute the SQL command
-    result = session.sql(cmd).collect()
+    try:
+        result = session.sql(cmd).collect()
+        
+        # Ensure the result is not empty
+        if result and result[0]:
+            # Parse the JSON string from the result
+            data = json.loads(result[0][0])  # Assuming the result is in the first row and column
+            label = data.get("label")
+            return label
+        else:
+            return None  # No classification result
+    except Exception as e:
+        print(f"Error during classification: {e}")
+        return None
+
+# def classify_prompt(query):
+#     cmd = f"""
+#     SELECT SNOWFLAKE.CORTEX.CLASSIFY_TEXT(
+#       '{query}',
+#       [
+#         {{
+#           'label': 'recipe',
+#           'description': 'Queries related to cooking or preparing specific dishes or meals',
+#           'examples': ['How do I bake a chocolate cake?', 'Give me a recipe for lasagna', 'What are the steps to make sushi?']
+#         }},
+#         {{
+#           'label': 'ingredients',
+#           'description': 'Queries related to category of food based on their nutritional facts or their properties',
+#           'examples': ['What is a high protein source?', 'Suggest some food with low calories?', 'If I am diabetic what foods should I avoid?']
+#         }},
+#         {{
+#           'label': 'name',
+#           'description': 'Queries related to specific ingredients, specified by their name',
+#           'examples': ['Tell me the nutritional facts of mangoes?', 'What are the nutritional facts of oranges per 100g?','Tell me about bananas.']
+#         }}
+#       ],
+#       {{'task_description': 'Classify the query as either recipe, ingredients or name if a specific ingredient is mentioned based on the intent of the user'}}
+#     );
+#     """
+
+#     # Execute the SQL command
+#     result = session.sql(cmd).collect()
     
-    # Ensure the result is not empty
-    if result:
-        # Parse the JSON string from the result
-        data = json.loads(result[0][0])  # Assuming the result is a single-row, single-column response
-        label = data.get("label", "Unknown")
-        return label
-    else:
-        return None  # Return null if no result is returned
+#     # Ensure the result is not empty
+#     if result:
+#         # Parse the JSON string from the result
+#         data = json.loads(result[0][0])  # Assuming the result is a single-row, single-column response
+#         label = data.get("label")
+#         return label
+#     else:
+#         return None  # Return null if no result is returned
 
 
 def get_similar_chunks_search_service(query, classification):
@@ -280,6 +321,7 @@ def summarize_question_with_history(chat_history, question):
 
 def create_prompt(myquestion):
     classification = classify_prompt(myquestion)
+    st.success(f"Prompt classified as:{classification}")
     if not classification:
         return "Unable to classify the query.", {}
 
@@ -302,7 +344,9 @@ def create_prompt(myquestion):
     if classification == "recipe":
         results = {item["TRANSLATEDRECIPENAME"]: item["TRANSLATEDINSTRUCTIONS"] for item in json_data["results"]}
     elif classification == "ingredients":
-        results = {item["NAME"]: {k: item[k] for k in TABLE2_COLUMNS if k in item} for item in json_data["results"]}
+            results = {item["NAME"]: {k: item[k] for k in TABLE2_COLUMNS if k in item} for item in json_data["results"]}
+    elif classification == "ingredients_by_name":
+            results = {item["NAME"]: {k: item[k] for k in TABLE2_COLUMNS if k in item} for item in json_data["results"]}
     else:
         return "Unknown classification.", {}
 
