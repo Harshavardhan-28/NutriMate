@@ -49,13 +49,13 @@ def init_session():
     Initializes and returns a Snowflake session using the Snowpark library.
     """
     connection_params = {
-        "account": "DTGLTTL-SVB41214",  # Replace with your Snowflake account identifier
-        "user": "Harsh28",  # Replace with your Snowflake username
-        "password": "Football@28#",  # Replace with a secure method to retrieve the password
-        "role": "ACCOUNTADMIN",
-        "database": "NUTRITION",
-        "schema": "DATA",
-        "warehouse": "COMPUTE_WH",
+        "account":st.secrets["account"],  # Replace with your Snowflake account identifier
+        "user": st.secrets["user"],  # Replace with your Snowflake username
+        "password": st.secrets["password"],  # Replace with a secure method to retrieve the password
+        "role": st.secrets["role"],
+        "database": st.secrets["database"],
+        "schema": st.secrets["schema"],
+        "warehouse": st.secrets["warehouse"],
     }
     try:
         # Create a Snowflake session
@@ -90,7 +90,7 @@ def config_options():
     # st.sidebar.selectbox('Select diet:', diet_list, key="diet_value")
     st.sidebar.checkbox('Do you want me to remember the chat history?', key="use_chat_history", value=True)
     st.sidebar.checkbox('Debug: Click to see summary of previous conversations', key="debug", value=True)
-    st.sidebar.button("Start Over", key="clear_conversation", on_click=init_messages)
+    st.sidebar.button("Start Over", key="clear_conversation", on_click=reset_state)
     st.sidebar.expander("Session State").write(st.session_state)
 
 
@@ -202,27 +202,43 @@ def fetch_and_store_json_data(question):
     Fetches and stores the JSON data globally in session_state for reuse.
     """
     classification = classify_prompt(question)
-    if "json_data" not in st.session_state:
-        st.session_state.json_data = {}  # Initialize if not present
+    if classification=='recipe':
+        if "json_data" not in st.session_state:
+            st.session_state.json_data = {}  # Initialize if not present
 
-    if st.session_state.use_chat_history:
-        chat_history = get_chat_history()
-        if chat_history:
-            question_summary = summarize_question_with_history(chat_history, question)
-            prompt_context = get_similar_chunks_search_service(question_summary, classification)
+        if st.session_state.use_chat_history:
+            chat_history = get_chat_history()
+            if chat_history:
+                question_summary = summarize_question_with_history(chat_history, question)
+                prompt_context = get_similar_chunks_search_service(question_summary, classification)
+            else:
+                prompt_context = get_similar_chunks_search_service(question, classification)
         else:
             prompt_context = get_similar_chunks_search_service(question, classification)
-    else:
-        prompt_context = get_similar_chunks_search_service(question, classification)
 
-    # Parse and store JSON data in session state
-    json_data = json.loads(prompt_context)
-    st.session_state.json_data = json_data
+        # Parse and store JSON data in session state
+        json_data = json.loads(prompt_context)
+        st.session_state.json_data = json_data
+        if "json_data" in st.session_state and st.session_state.json_data:
+            st.success("Json data fetched and stored")
 
 
 def init_messages():
+    """
+    Clears chat messages and resets all relevant state variables, including flags for generated files.
+    """
+    if st.session_state.get("clear_conversation", False) or "messages" not in st.session_state:
+        # Reset messages
+        st.session_state.messages = []
+
+        
+def reset_state():
     if st.session_state.get("clear_conversation", False) or "messages" not in st.session_state:
         st.session_state.messages = []
+    st.session_state.json_data = None 
+    st.session_state.pdf_data = None  # Reset PDF data
+    st.session_state.csv_data = None  # Reset CSV data
+    st.session_state.latest_response = None
 
 def classify_prompt(query):
     cmd = f"""
@@ -258,6 +274,8 @@ def classify_prompt(query):
             # Parse the JSON string from the result
             data = json.loads(result[0][0])  # Assuming the result is in the first row and column
             label = data.get("label")
+            if label=='ingredients' or label=='ingredients_by_name':
+                st.session_state.json_data = None
             return label
         else:
             return None  # No classification result
@@ -282,8 +300,9 @@ def get_similar_chunks_search_service(query, classification):
 
     response = service.search(query, query_columns, limit=NUM_CHUNKS)
 
-    st.sidebar.json(response.json())
-    return response.json()
+    
+    st.sidebar.json(response.model_dump_json())
+    return response.model_dump_json()
 
 
 def get_chat_history():
@@ -376,14 +395,6 @@ def create_prompt(myquestion):
 
     return prompt, results
 
-
-# def complete(myquestion):
-#     prompt, recipes = create_prompt(myquestion)
-#     cmd = """
-#             SELECT snowflake.cortex.complete(?, ?) AS response
-#           """
-#     df_response = session.sql(cmd, params=[st.session_state.model_name, prompt]).collect()
-#     return df_response, recipes
 def complete(myquestion):
     prompt, recipes = create_prompt(myquestion)
     cmd = """
@@ -395,95 +406,92 @@ def complete(myquestion):
     res_text = df_response[0]['RESPONSE'] if df_response else "No response received."
     return res_text, recipes
 
-
 def main():
     st.title(":speech_balloon: Chat Assistant with Snowflake Cortex")
-    st.write("Explore Indian food recipes and cuisines using structured data:")
+    st.write("Explore cuisines and meal plans using structured data:")
 
     config_options()
     init_messages()
-    
-   
+
+    # Render previous chat messages
     for message in st.session_state.get("messages", []):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+    # Input for new questions
     question = st.chat_input("Enter your question about recipes and cuisines")
+    st.session_state.classification = classify_prompt(question)
 
     if question:
-        # Classify the question
-        classification = classify_prompt(question)
-
-        # Append user message to session state
         st.session_state.messages.append({"role": "user", "content": question})
+
         with st.chat_message("user"):
             st.markdown(question)
 
-        # Prepare assistant response
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
-            question = question.replace("'", "")  # Clean the input
 
-            if classification in ["ingredients", "ingredients_by_name"]:
-                with st.spinner(f"{st.session_state.model_name} thinking..."):
-                    res_text, recipes = complete(question)
-                    message_placeholder.markdown(res_text)
-                    if recipes:
-                        with st.sidebar.expander("Related Recipes"):
-                            for name, recipe in recipes.items():
-                                st.sidebar.markdown(f"### {name}")
-                                st.sidebar.markdown(recipe)
+            question = question.replace("'", "")
 
-            elif classification == "recipe":
-                with st.spinner(f"{st.session_state.model_name} thinking..."):
-                    res_text, recipes = complete(question)
-
-                    fetch_and_store_json_data(question)
-
-                    message_placeholder.markdown(res_text)
-                # Generate and download files if applicable
-                if "json_data" in st.session_state and st.session_state.json_data:
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        if st.button("Generate and Download Shopping List as PDF"):
-                            generate_shopping_list(st.session_state.json_data)
-                            st.download_button(
-                                label="Download Shopping List as PDF",
-                                data=st.session_state.shopping_list_pdf_data,
-                                file_name="shopping_list.pdf",
-                                mime="application/pdf"
-                            )
-
-                    with col2:
-                        if st.button("Generate and Download Meal Plan as CSV"):
-                            download_csv(st.session_state.json_data)
-                            st.download_button(
-                                label="Download Meal Plan as CSV",
-                                data=st.session_state.csv_data,
-                                file_name="mealplan.csv",
-                                mime="text/csv"
-                            )
-
-                if st.session_state.get("latest_response"):
-                    if st.button("Generate and Download Full Response as PDF"):
-                        download_response_as_pdf(st.session_state.latest_response)
-                        st.download_button(
-                            label="Download Full Response as PDF",
-                            data=st.session_state.pdf_data,
-                            file_name="recipes.pdf",
-                            mime="application/pdf"
-                        )
-
-            else:  # Handle unknown classifications
-                res_text = "I'm sorry, I couldn't classify your query. Could you clarify if this is about a recipe, ingredients, or a specific food item?"
+            with st.spinner(f"{st.session_state.model_name} thinking..."):
+                response = complete(question)
+                fetch_and_store_json_data(question)
+                res_text = response[0]
                 message_placeholder.markdown(res_text)
 
-            # Append assistant response to session state
-            st.session_state.messages.append({"role": "assistant", "content": res_text})
+        st.session_state.messages.append({"role": "assistant", "content": res_text})
+        st.session_state.latest_response = res_text
 
+        
 
-    
+    # Display buttons to generate files
+    if "json_data" in st.session_state and st.session_state.json_data:
+        # Generate Shopping List
+        if st.button("Generate Shopping List as PDF"):
+            generate_shopping_list(st.session_state.json_data)
+            st.session_state.shopping_list_ready = True
+            st.success("Shopping list PDF generated successfully!")
+
+            # Show download button for Shopping List
+            if st.session_state.get("shopping_list_ready"):
+                st.download_button(
+                    label="Download Shopping List as PDF",
+                    data=st.session_state.shopping_list_pdf_data,
+                    file_name="shopping_list.pdf",
+                    mime="application/pdf"
+                )
+
+        # Generate Meal Plan CSV
+        if st.button("Generate Meal Plan as CSV"):
+            download_csv(st.session_state.json_data)
+            st.session_state.meal_plan_ready = True
+            st.success("Meal plan CSV generated successfully!")
+
+            # Show download button for Meal Plan
+            if st.session_state.get("meal_plan_ready"):
+                st.download_button(
+                    label="Download Meal Plan as CSV",
+                    data=st.session_state.csv_data,
+                    file_name="mealplan.csv",
+                    mime="text/csv"
+                )
+
+    # Generate Full Response PDF
+    if (st.session_state.get("latest_response") is not None):
+        if st.button("Generate Full Response as PDF"):
+            download_response_as_pdf(st.session_state.latest_response)
+            st.session_state.response_pdf_ready = True
+            st.success("Response PDF generated successfully!")
+
+            # Show download button for Full Response
+            if st.session_state.get("response_pdf_ready"):
+                st.download_button(
+                    label="Download Full Response as PDF",
+                    data=st.session_state.pdf_data,
+                    file_name="recipes.pdf",
+                    mime="application/pdf"
+                )
 
 if __name__ == "__main__":
     main()
+
