@@ -70,7 +70,7 @@ SLIDE_WINDOW = 7  # Number of past conversations to remember
 # Service parameters
 CORTEX_SEARCH_DATABASE = "NUTRITION"
 CORTEX_SEARCH_SCHEMA = "DATA"
-CORTEX_SEARCH_SERVICE = "FOOD_SEARCH_SERVICE"
+CORTEX_SEARCH_SERVICE = "FOOD_SEARCH"
 
 # Columns to query in the service
 COLUMNS = [
@@ -93,9 +93,9 @@ def init_session():
     Initializes and returns a Snowflake session using the Snowpark library.
     """
     connection_params = {
-        "account": "ULUGCKT-SCB80390",  # Replace with your Snowflake account identifier
-        "user": "aanchal",  # Replace with your Snowflake username
-        "password": "E@rlgreyte@1234",  # Replace with a secure method to retrieve the password
+        "account": "DTGLTTL-SVB41214",  # Replace with your Snowflake account identifier
+        "user": "Harsh28",  # Replace with your Snowflake username
+        "password": "Football@28#",  # Replace with a secure method to retrieve the password
         "role": "ACCOUNTADMIN",
         "database": "NUTRITION",
         "schema": "DATA",
@@ -124,14 +124,14 @@ def config_options():
         'mistral-large',
         'mistral-7b'), key="model_name")
 
-    cuisines = session.sql("SELECT DISTINCT CUISINE FROM DATA.FOOD_RECIPIES").collect()
-    diets = session.sql("SELECT DISTINCT DIET FROM DATA.FOOD_RECIPIES").collect()
+    # cuisines = session.sql("SELECT DISTINCT CUISINE FROM DATA.FOOD_RECIPIES").collect()
+    # diets = session.sql("SELECT DISTINCT DIET FROM DATA.FOOD_RECIPIES").collect()
 
-    cuisine_list = ['ALL'] + [cuisine.CUISINE for cuisine in cuisines]
-    diet_list = ['ALL'] + [diet.DIET for diet in diets]
+    # cuisine_list = ['ALL'] + [cuisine.CUISINE for cuisine in cuisines]
+    # diet_list = ['ALL'] + [diet.DIET for diet in diets]
 
-    st.sidebar.selectbox('Select cuisine:', cuisine_list, key="cuisine_value")
-    st.sidebar.selectbox('Select diet:', diet_list, key="diet_value")
+    # st.sidebar.selectbox('Select cuisine:', cuisine_list, key="cuisine_value")
+    # st.sidebar.selectbox('Select diet:', diet_list, key="diet_value")
     st.sidebar.checkbox('Do you want me to remember the chat history?', key="use_chat_history", value=True)
     st.sidebar.checkbox('Debug: Click to see summary of previous conversations', key="debug", value=True)
     st.sidebar.button("Start Over", key="clear_conversation", on_click=init_messages)
@@ -405,8 +405,7 @@ def main():
                 label="Download Shopping List as PDF",
                 data=st.session_state.shopping_list_pdf_data,
                 file_name="shopping_list.pdf",
-                mime="application/pdf",
-                on_click=None
+                mime="application/pdf"
             )
 
         if st.button("Generate and Download Meal Plan as CSV"):
@@ -415,8 +414,7 @@ def main():
                 label="Download Meal Plan as CSV",
                 data=st.session_state.csv_data,
                 file_name="mealplan.csv",
-                mime="text/csv",
-                on_click=None
+                mime="text/csv"
             )
 
     if st.session_state.get("latest_response") is not None:
@@ -426,8 +424,7 @@ def main():
                 label="Download Full Response as PDF",
                 data=st.session_state.pdf_data,
                 file_name="recipes.pdf",
-                mime="application/pdf",
-                on_click=None
+                mime="application/pdf"
             )
 
 
