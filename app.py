@@ -7,6 +7,8 @@ import json
 from fpdf import FPDF
 from markdown2 import markdown
 from bs4 import BeautifulSoup  # To handle HTML parsing
+import base64
+st.set_page_config(page_title='NutriMate', layout = 'wide', page_icon = 'static/NutriMate2.png', initial_sidebar_state = 'auto')
 
 pd.set_option("max_colwidth", None)
 
@@ -73,8 +75,37 @@ svcI_N = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].co
 svcI = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].cortex_search_services[INGREDIENT_SEARCH_SERVICE]
 
 ### Functions
+def add_bg_from_local(image_file):
+    """
+    Adds a background image to the Streamlit app using a local image file.
+    """
+    with open(image_file, "rb") as img_file:
+        encoded_img = base64.b64encode(img_file.read()).decode()
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/png;base64,{encoded_img}");
+            background-position: center;
+            background-size: 78%; /* Keeps the original size of the image */
+            background-repeat: no-repeat; /* Repeats the image both horizontally and vertically */
+            background-attachment: scroll; /* Ensures it scrolls with the content */
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Use the function
+add_bg_from_local("static/background.png")
+
+def load_css():
+    with open("static/styles.css", "r") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
 
 def config_options():
+
     st.sidebar.selectbox('Select your model:', (
         'mixtral-8x7b',
         'mistral-large',
@@ -140,7 +171,7 @@ def generate_shopping_list(json_data):
         pdf_data = pdf.output(dest="S").encode("latin1")
         st.session_state.shopping_list_pdf_data = pdf_data
 
-        st.success("Shopping list generated successfully!")
+        #st.success("Shopping list generated successfully!")
 
     except Exception as e:
         st.error(f"An error occurred while generating the shopping list: {e}")
@@ -219,8 +250,8 @@ def fetch_and_store_json_data(question):
         # Parse and store JSON data in session state
         json_data = json.loads(prompt_context)
         st.session_state.json_data = json_data
-        if "json_data" in st.session_state and st.session_state.json_data:
-            st.success("Json data fetched and stored")
+        # if "json_data" in st.session_state and st.session_state.json_data:
+        #     #st.success("Json data fetched and stored")
 
 
 def init_messages():
@@ -274,8 +305,8 @@ def classify_prompt(query):
             # Parse the JSON string from the result
             data = json.loads(result[0][0])  # Assuming the result is in the first row and column
             label = data.get("label")
-            if label=='ingredients' or label=='ingredients_by_name':
-                st.session_state.json_data = None
+            # if label=='ingredients' or label=='ingredients_by_name':
+            #     st.session_state.json_data = None
             return label
         else:
             return None  # No classification result
@@ -341,7 +372,7 @@ def summarize_question_with_history(chat_history, question):
 
 def create_prompt(myquestion):
     classification = classify_prompt(myquestion)
-    st.success(f"Prompt classified as:{classification}")
+    #st.success(f"Prompt classified as:{classification}")
     if not classification:
         return "Unable to classify the query.", {}
 
@@ -420,11 +451,11 @@ def main():
 
     # Input for new questions
     question = st.chat_input("Enter your question about recipes and cuisines")
-    st.session_state.classification = classify_prompt(question)
+    
 
     if question:
         st.session_state.messages.append({"role": "user", "content": question})
-
+        st.session_state.classification = classify_prompt(question)
         with st.chat_message("user"):
             st.markdown(question)
 
@@ -445,16 +476,19 @@ def main():
         
 
     # Display buttons to generate files
-    if "json_data" in st.session_state and st.session_state.json_data:
+    if "json_data" in st.session_state and st.session_state.json_data and st.session_state.classification=="recipe":
         # Generate Shopping List
-        if st.button("Generate Shopping List as PDF"):
+        if st.button(
+            label="Generate Shopping List as PDF",
+            icon=":material/shopping_bag:"):
             generate_shopping_list(st.session_state.json_data)
             st.session_state.shopping_list_ready = True
-            st.success("Shopping list PDF generated successfully!")
+            #st.success("Shopping list PDF generated successfully!")
 
             # Show download button for Shopping List
             if st.session_state.get("shopping_list_ready"):
                 st.download_button(
+                    icon=":material/download:",
                     label="Download Shopping List as PDF",
                     data=st.session_state.shopping_list_pdf_data,
                     file_name="shopping_list.pdf",
@@ -462,14 +496,15 @@ def main():
                 )
 
         # Generate Meal Plan CSV
-        if st.button("Generate Meal Plan as CSV"):
+        if st.button(label="Generate Meal Plan as CSV",icon=":material/ramen_dining:"):
             download_csv(st.session_state.json_data)
             st.session_state.meal_plan_ready = True
-            st.success("Meal plan CSV generated successfully!")
+            #st.success("Meal plan CSV generated successfully!")
 
             # Show download button for Meal Plan
             if st.session_state.get("meal_plan_ready"):
                 st.download_button(
+                    icon=":material/download:",
                     label="Download Meal Plan as CSV",
                     data=st.session_state.csv_data,
                     file_name="mealplan.csv",
@@ -478,14 +513,15 @@ def main():
 
     # Generate Full Response PDF
     if (st.session_state.get("latest_response") is not None):
-        if st.button("Generate Full Response as PDF"):
+        if st.button(label="Generate Full Response as PDF",icon=":material/picture_as_pdf:"):
             download_response_as_pdf(st.session_state.latest_response)
             st.session_state.response_pdf_ready = True
-            st.success("Response PDF generated successfully!")
+            #st.success("Response PDF generated successfully!")
 
             # Show download button for Full Response
             if st.session_state.get("response_pdf_ready"):
                 st.download_button(
+                    icon=":material/download:",
                     label="Download Full Response as PDF",
                     data=st.session_state.pdf_data,
                     file_name="recipes.pdf",
