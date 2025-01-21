@@ -1,5 +1,10 @@
 .streamlit/secrets.toml
 
+#Redundant files
+/workspaces/Nutrtion-Chatbot/streamlit_app.py
+/workspaces/Nutrtion-Chatbot/app.py
+/workspaces/Nutrtion-Chatbot/session.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
