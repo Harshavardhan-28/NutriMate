@@ -13,7 +13,7 @@
 
 2. Follow the [SNOWFLAKE_SQL_GUIDE](SNOWFLAKE_SQL_GUIDE.md) to create the desired backend
 
-3. Create a .streamlit\sectret.toml 
+3. Create a .streamlit/sectret.toml 
    ```
    account = "your_account_id"  
    user = "your_username"  
@@ -34,7 +34,7 @@
 4. Run the app
 
    ```
-   $ streamlit run streamlit_app.py
+   $ streamlit run app.py
    ```
 ---
 
