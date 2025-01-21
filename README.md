@@ -1,7 +1,7 @@
-# Nutrition Chatbot (RAG App)
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://document-question-answering-template.streamlit.app/)
+# NutriMate (Nutrition nd Recipes RAG App)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nutrimate-ragnroll.streamlit)
 
-The **Nutrition Chatbot** is an AI-powered RAG (Retrieval-Augmented Generation) app designed to provide users with personalized recipes, detailed nutrition facts, categorized food items, and the ability to compare nutritional information between two items. The app is deployed on **Streamlit Community Cloud**, ensuring seamless access and usability.
+**NutriMate** is an AI-powered RAG (Retrieval-Augmented Generation) app designed to provide users with personalized recipes, detailed nutrition facts, categorized food items, and the ability to compare nutritional information between two items. The app is deployed on **Streamlit Community Cloud**, ensuring seamless access and usability.
 
 ### How to run it on your own machine
 
