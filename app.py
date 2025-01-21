@@ -13,15 +13,15 @@ st.set_page_config(page_title='NutriMate', layout = 'wide', page_icon = 'static/
 pd.set_option("max_colwidth", None)
 
 # Default Values
-NUM_CHUNKS = 3  # Number of chunks provided as context. Adjust this to optimize accuracy
+NUM_CHUNKS = 4  # Number of chunks provided as context. Adjust this to optimize accuracy
 SLIDE_WINDOW = 7  # Number of past conversations to remember
 
 # Service parameters
-CORTEX_SEARCH_DATABASE = "NUTRITION"
-CORTEX_SEARCH_SCHEMA = "DATA"
-RECIPE_SEARCH_SERVICE = "FOOD_SEARCH"
-INGREDIENT_SEARCH_SERVICE = "NUTRITION_SEARCH"
-INGREDIENT_BY_NAME_SEARCH_SERVICE = "HARSH"
+CORTEX_SEARCH_DATABASE =st.secrets["CORTEX_SEARCH_DATABASE"]
+CORTEX_SEARCH_SCHEMA = st.secrets["CORTEX_SEARCH_SCHEMA"]
+RECIPE_SEARCH_SERVICE = st.secrets["RECIPE_SEARCH_SERVICE"]
+INGREDIENT_SEARCH_SERVICE =st.secrets["INGREDIENT_SEARCH_SERVICE"]
+INGREDIENT_BY_NAME_SEARCH_SERVICE =st.secrets["INGREDIENT_BY_NAME_SEARCH_SERVICE"]
 
 # Updated Default Values
 TABLE2_COLUMNS = [
@@ -50,10 +50,11 @@ def init_session():
     """
     Initializes and returns a Snowflake session using the Snowpark library.
     """
+    #use the details of your own account for these params
     connection_params = {
         "account":st.secrets["account"],  # Replace with your Snowflake account identifier
         "user": st.secrets["user"],  # Replace with your Snowflake username
-        "password": st.secrets["password"],  # Replace with a secure method to retrieve the password
+        "password": st.secrets["password"], 
         "role": st.secrets["role"],
         "database": st.secrets["database"],
         "schema": st.secrets["schema"],
