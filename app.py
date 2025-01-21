@@ -110,19 +110,10 @@ def config_options():
         'mixtral-8x7b',
         'mistral-large',
         'mistral-7b'), key="model_name")
-
-    # cuisines = session.sql("SELECT DISTINCT CUISINE FROM DATA.RECIPES").collect()
-    # diets = session.sql("SELECT DISTINCT DIET FROM DATA.RECIPES").collect()
-
-    # cuisine_list = ['ALL'] + [cuisine.CUISINE for cuisine in cuisines]
-    # diet_list = ['ALL'] + [diet.DIET for diet in diets]
-
-    # st.sidebar.selectbox('Select cuisine:', cuisine_list, key="cuisine_value")
-    # st.sidebar.selectbox('Select diet:', diet_list, key="diet_value")
     st.sidebar.checkbox('Do you want me to remember the chat history?', key="use_chat_history", value=True)
     st.sidebar.checkbox('Debug: Click to see summary of previous conversations', key="debug", value=True)
     st.sidebar.button("Start Over", key="clear_conversation", on_click=reset_state)
-    st.sidebar.expander("Session State").write(st.session_state)
+    #st.sidebar.expander("Session State").write(st.session_state)
 
 
 def generate_shopping_list(json_data):
@@ -175,6 +166,40 @@ def generate_shopping_list(json_data):
 
     except Exception as e:
         st.error(f"An error occurred while generating the shopping list: {e}")
+
+def extract_ingredients(query):
+    """Extracts specific ingredients from the user query."""
+    ingredient_prompt = f"List the specific ingredients mentioned in the following query: {query}"
+    cmd = """
+            SELECT snowflake.cortex.complete(?, ?) AS response
+          """
+    response = session.sql(
+        cmd, params=[st.session_state.model_name, ingredient_prompt]
+    ).collect()
+    
+    if response:
+        ingredients = [
+            ingredient.strip()
+            for ingredient in response[0]["RESPONSE"].split(",")
+        ]
+        return ingredients
+    return []
+
+def fetch_ingredient_details(ingredient):
+    """Fetches details for a specific ingredient."""
+    detail_prompt = f"Can you tell me about {ingredient}?"
+    cmd = """
+            SELECT snowflake.cortex.complete(?, ?) AS response
+          """
+    response = session.sql(
+        cmd, params=[st.session_state.model_name, detail_prompt]
+    ).collect()
+    
+    if response:
+        return response[0]["RESPONSE"]
+    return f"No details found for {ingredient}."
+
+
 
 
 def download_response_as_pdf(response_text):
@@ -332,7 +357,7 @@ def get_similar_chunks_search_service(query, classification):
     response = service.search(query, query_columns, limit=NUM_CHUNKS)
 
     
-    st.sidebar.json(response.model_dump_json())
+    #st.sidebar.json(response.model_dump_json())
     return response.model_dump_json()
 
 
@@ -363,9 +388,9 @@ def summarize_question_with_history(chat_history, question):
     df_response = session.sql(cmd, params=[st.session_state.model_name, prompt]).collect()
     summary = df_response[0].RESPONSE
 
-    if st.session_state.debug:
-        st.sidebar.text("Summary used to find similar chunks in the docs:")
-        st.sidebar.caption(summary)
+    # if st.session_state.debug:
+    #     st.sidebar.text("Summary used to find similar chunks in the docs:")
+    #     st.sidebar.caption(summary)
 
     return summary.replace("'", "")
 
@@ -426,8 +451,39 @@ def create_prompt(myquestion):
 
     return prompt, results
 
+def fetch_and_complete(myquestion):
+    prompt, results = create_prompt(myquestion)
+
+    if "ingredients_by_name" in myquestion.lower():
+        ingredients = results.keys()
+        chat_history = []
+        for ingredient in ingredients:
+            # Fetch details for each ingredient
+            ingredient_prompt = f"Can you tell me about {ingredient}?"
+            cmd = """
+                SELECT snowflake.cortex.complete(?, ?) AS response
+            """
+            response = session.sql(
+                cmd, params=[st.session_state.model_name, ingredient_prompt]
+            ).collect()
+            ingredient_details = response[0]["RESPONSE"] if response else "No details found."
+            chat_history.append({"role": "user", "content": ingredient_prompt})
+            chat_history.append({"role": "assistant", "content": ingredient_details})
+
+    # Use the original question with full chat context
+    cmd = """
+        SELECT snowflake.cortex.complete(?, ?) AS response
+    """
+    df_response = session.sql(cmd, params=[st.session_state.model_name, prompt]).collect()
+    res_text = df_response[0]["RESPONSE"] if df_response else "No response received."
+
+    return res_text, results
+
 def complete(myquestion):
-    prompt, recipes = create_prompt(myquestion)
+    if st.session_state.classification == "ingredients_by_name":
+        prompt,recipes = fetch_and_complete(myquestion)
+    else:
+        prompt, recipes = create_prompt(myquestion)
     cmd = """
             SELECT snowflake.cortex.complete(?, ?) AS response
           """
@@ -436,6 +492,63 @@ def complete(myquestion):
     # Extract the response text
     res_text = df_response[0]['RESPONSE'] if df_response else "No response received."
     return res_text, recipes
+
+def create_prompt(myquestion):
+    classification = classify_prompt(myquestion)
+    #st.success(f"Prompt classified as:{classification}")
+    if not classification:
+        return "Unable to classify the query.", {}
+
+    if st.session_state.use_chat_history:
+        chat_history = get_chat_history()
+        if chat_history:
+            question_summary = summarize_question_with_history(chat_history, myquestion)
+            prompt_context = get_similar_chunks_search_service(question_summary, classification)
+        else:
+            prompt_context = get_similar_chunks_search_service(myquestion, classification)
+    else:
+        prompt_context = get_similar_chunks_search_service(myquestion, classification)
+        chat_history = ""
+
+    if not prompt_context:
+        return "No relevant context found.", {}
+
+    # Parse context based on classification
+    json_data = json.loads(prompt_context)
+    if classification == "recipe":
+        results = {item["TRANSLATEDRECIPENAME"]: item["TRANSLATEDINSTRUCTIONS"] for item in json_data["results"]}
+    elif classification == "ingredients":
+            results = {item["NAME"]: {k: item[k] for k in TABLE2_COLUMNS if k in item} for item in json_data["results"]}
+    elif classification == "ingredients_by_name":
+            results = {item["NAME"]: {k: item[k] for k in TABLE2_COLUMNS if k in item} for item in json_data["results"]}
+    else:
+        return "Unknown classification.", {}
+
+    prompt = f"""
+           You are an expert assistant that extracts information from the CONTEXT provided
+           between <context> and </context> tags.
+           You offer a chat experience considering the information included in the CHAT HISTORY
+           provided between <chat_history> and </chat_history> tags.
+           When answering the question contained between <question> and </question> tags,
+           be concise and do not hallucinate.
+           If you don’t have the information, just say so.
+
+           Do not mention the CONTEXT or CHAT HISTORY used in your answer.
+
+           <chat_history>
+           {chat_history}
+           </chat_history>
+           <context>
+           {prompt_context}
+           </context>
+           <question>
+           {myquestion}
+           </question>
+           Answer:
+    """
+
+    return prompt, results
+
 
 def main():
     st.title(":speech_balloon: Chat Assistant with Snowflake Cortex")
@@ -465,9 +578,8 @@ def main():
             question = question.replace("'", "")
 
             with st.spinner(f"{st.session_state.model_name} thinking..."):
-                response = complete(question)
+                res_text, recipes = complete(question)
                 fetch_and_store_json_data(question)
-                res_text = response[0]
                 message_placeholder.markdown(res_text)
 
         st.session_state.messages.append({"role": "assistant", "content": res_text})
