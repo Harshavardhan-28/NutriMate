@@ -1,4 +1,4 @@
-# NutriMate (Nutrition nd Recipes RAG App)
+# NutriMate (Nutrition and Recipes RAG App)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nutrimate-ragnroll.streamlit)
 
 **NutriMate** is an AI-powered RAG (Retrieval-Augmented Generation) app designed to provide users with personalized recipes, detailed nutrition facts, categorized food items, and the ability to compare nutritional information between two items. The app is deployed on **Streamlit Community Cloud**, ensuring seamless access and usability.
